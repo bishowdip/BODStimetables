@@ -1,0 +1,25 @@
+# Core big-data stack
+pyspark>=4.0.0
+
+# Ingestion
+requests>=2.31
+gtfs-realtime-bindings>=1.0.0
+protobuf>=5.26
+PyYAML>=6.0
+
+# Static / supplementary data + geo
+pandas>=2.2
+numpy>=1.26
+geopandas>=1.0
+shapely>=2.0
+
+# Visualisation
+matplotlib>=3.8
+folium>=0.16
+
+# Notebooks / dashboard
+jupyter>=1.0
+streamlit>=1.35
+
+# Testing
+pytest>=8.0

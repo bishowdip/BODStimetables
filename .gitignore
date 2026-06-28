@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Spark
+spark-warehouse/
+metastore_db/
+derby.log
+*.crc
+_SUCCESS
+
+# Raw / generated data (too large to version, fetched by the ingest scripts)
+data/raw/
+data/parquet/
+data/*.zip
+data/*.pb
+*.parquet
+
+# Database artefacts (rebuilt by load_db.py)
+*.sqlite
+*.db
+!data/sample/*.db
+
+# Local config with paths / optional keys
+config/settings.local.yaml
+.env
+
+# Reports / large binaries kept out of the repo
+*.pdf
+ST5011CEM_BuildSpec.md
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
