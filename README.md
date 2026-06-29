@@ -36,7 +36,29 @@ Spark 4 runs on Java 17 or 21. Check `java -version`; if you need to pin it:
 export JAVA_HOME=$(/usr/libexec/java_home -v 17)   # or -v 21
 ```
 
-## Run order
+## Quick smoke test (no download)
+
+To exercise the whole pipeline on a tiny synthetic dataset in the same layout as
+the real feeds, generate it and run from the processing stage onwards:
+
+```bash
+python -m tools.make_sample          # writes data/parquet/ in the ingest-stage layout
+python -m src.process.trip_match
+python -m src.process.compute_reliability
+python -m src.process.equity_join
+python -m src.db.load_db
+python -m src.ml.features && python -m src.ml.train_models && python -m src.ml.evaluate
+python -m src.viz.plots && python -m src.viz.map
+```
+
+A small committed copy of that sample also lives in `data/sample/` for
+inspection (point `paths.parquet` at it in `config/settings.local.yaml` to run
+against it directly). Run `python -m pytest` for the unit tests.
+
+> On a Mac with multiple JDKs, `get_spark` auto-selects a Spark-compatible Java
+> (17/21) — Spark 4 does not run on Java 24+.
+
+## Run order (full pipeline on real data)
 
 The scripts read everything from `config/settings.yaml` (study dates, bbox,
 on-time thresholds, paths). Edit that first, then:

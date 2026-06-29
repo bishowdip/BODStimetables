@@ -14,8 +14,9 @@ from __future__ import annotations
 import argparse
 import math
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -27,6 +28,10 @@ np.random.seed(7)
 
 # A handful of stops inside the WY bbox (Leeds-ish coordinates).
 BASE_LAT, BASE_LON = 53.80, -1.55
+LONDON = ZoneInfo("Europe/London")
+
+# A few scheduled departures per time band so per-band compliance varies.
+DEPARTURE_HOURS = (7, 8, 10, 13, 16, 17, 20, 21)
 
 
 def _offset(lat, lon, dn_m, de_m):
@@ -67,7 +72,7 @@ def build(out: Path, cfg: dict, scale: float) -> None:
 
         # several trips per day across the time bands
         for d_idx, date in enumerate(dates):
-            for dep_hour in (8, 12, 17, 20):  # one per band
+            for dep_hour in DEPARTURE_HOURS:
                 trip_id = f"{route_id}_{date}_{dep_hour}"
                 trips.append({"trip_id": trip_id, "route_id": route_id})
                 t = dep_hour * 3600
@@ -99,7 +104,9 @@ def build(out: Path, cfg: dict, scale: float) -> None:
             # delay: better routes ~ on time, worse routes skew late
             delay_min = np.random.normal(loc=(1 - ontime_bias) * 6, scale=2.0)
             pass_sec = sched_sec + delay_min * 60
-            day0 = datetime.fromisoformat(date).replace(tzinfo=timezone.utc)
+            # Schedule times are local (Europe/London); building the instant in
+            # that zone keeps the stored epoch consistent with real GTFS-RT.
+            day0 = datetime.fromisoformat(date).replace(tzinfo=LONDON)
             ts = day0 + timedelta(seconds=pass_sec)
             jlat, jlon = _offset(lat, lon, np.random.normal(0, 15), np.random.normal(0, 15))
             positions.append(
