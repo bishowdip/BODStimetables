@@ -86,6 +86,11 @@ python -m src.ml.evaluate
 # 5. visualisation
 python -m src.viz.plots
 python -m src.viz.map
+
+# 6. deliverables: SQL dump + diagrams + interactive dashboard
+python -m src.db.dump            # -> data/reliability_dump.sql
+python -m tools.make_diagrams    # -> docs/architecture.png, docs/schema.png
+streamlit run src/viz/dashboard.py
 ```
 
 A small committed sample lives in `data/sample/` so the processing and ML stages
