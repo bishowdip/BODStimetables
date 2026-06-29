@@ -49,3 +49,6 @@ ST5011CEM_BuildSpec.md
 .DS_Store
 .idea/
 .vscode/
+
+# Personal study notes (not part of the submission repo)
+notes/

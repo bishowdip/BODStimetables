@@ -25,12 +25,14 @@ GTFS_TABLES = ("stops", "routes", "trips", "stop_times", "calendar")
 
 
 def _unzip_timetables(dates, raw_root: Path) -> list[Path]:
+    # Per-date archive zips, plus a single current GTFS (the live timetable path).
+    candidates = [(raw_root / d / "timetable.zip", raw_root / d / "gtfs") for d in dates]
+    candidates.append((raw_root / "timetable.zip", raw_root / "gtfs"))
+
     gtfs_dirs = []
-    for date in dates:
-        zpath = raw_root / date / "timetable.zip"
+    for zpath, out in candidates:
         if not zpath.exists():
             continue
-        out = raw_root / date / "gtfs"
         if not out.exists():
             with zipfile.ZipFile(zpath) as zf:
                 zf.extractall(out)

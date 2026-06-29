@@ -51,13 +51,22 @@ sources:
   ndl_archive_base: https://data.bus-data.dft.gov.uk/  # placeholder; set the real archive base
   open_meteo_archive: https://archive-api.open-meteo.com/v1/archive
   rate_limit_per_sec: 1
-  # URL templates filled with {date}=YYYY-MM-DD by download_archive.py.
-  # Set these to the real archive paths you have access to before running ingest.
+  # --- Live BODS feeds (self-archive path; the 2024 NDL archive is expired). ---
+  # The API key is read from the env var named here, never stored in the repo:
+  #   export BODS_API_KEY=...   (free account at data.bus-data.dft.gov.uk)
+  bods:
+    api_key_env: BODS_API_KEY
+    gtfsrt_url: https://data.bus-data.dft.gov.uk/api/v1/gtfsrtdatafeed/
+    # Current regional GTFS timetable download (Yorkshire). May need the key too.
+    timetable_url: https://data.bus-data.dft.gov.uk/timetable/download/gtfs-file/yorkshire
+
+  # --- Optional: date-templated archive (only if you have a working archive). ---
   # timetable_url_template: "https://.../timetables/{date}/wy.zip"
   # gtfsrt_url_template:    "https://.../gtfsrt/{date}/snapshots.dat"
-  # Local paths for the supplementary datasets (download once, by hand):
-  # imd_csv:       data/raw/imd2019.csv
-  # lsoa_geojson:  data/raw/lsoa_2011.geojson
+
+  # --- Supplementary datasets (download once, by hand; bot-protected sites). ---
+  # imd_csv:       data/raw/imd2019.csv      # IoD2019 File 7 (LSOA scores/deciles)
+  # lsoa_geojson:  data/raw/lsoa_2011.geojson # ONS LSOA 2011 boundaries (WY subset)
 
 spark:
   app_name: bods-reliability-wy

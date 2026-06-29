@@ -63,12 +63,33 @@ against it directly). Run `python -m pytest` for the unit tests.
 The scripts read everything from `config/settings.yaml` (study dates, bbox,
 on-time thresholds, paths). Edit that first, then:
 
+Get the data first. The dated NDL archive only retained ~64 days, so for a
+current window self-archive the live BODS feed (free account at
+data.bus-data.dft.gov.uk; the key is read from `$BODS_API_KEY`, never stored):
+
+```bash
+export BODS_API_KEY=...                       # your free BODS key
+
+# collect a 7-day window of WY positions (run in the background; bbox-filtered)
+nohup python -m src.ingest.poll_live --hours 168 > poll.log 2>&1 &
+
+python -m src.ingest.download_timetable       # current regional GTFS (Yorkshire)
+```
+
+Download the two keyless supplementary datasets once by hand (the gov portals
+are bot-protected), save them to `data/raw/`, and set `imd_csv` / `lsoa_geojson`
+in `config/settings.yaml`:
+- IMD 2019 "File 7" LSOA scores/deciles — gov.uk English indices of deprivation
+- LSOA 2011 boundaries — ONS Open Geography Portal (WY subset is enough)
+
+Then run the pipeline:
+
 ```bash
 # 1. ingestion  (writes Parquet under data/parquet/, partitioned by service_date)
-python -m src.ingest.download_archive
-python -m src.ingest.parse_gtfsrt
-python -m src.ingest.load_static
-python -m src.ingest.fetch_weather
+python -m src.ingest.parse_gtfsrt             # parse the polled snapshots -> Parquet
+python -m src.ingest.load_static              # GTFS timetable + IMD + LSOA -> Parquet
+python -m src.ingest.fetch_weather            # Open-Meteo (no key)
+# (src.ingest.download_archive is the alternative if you have a dated archive)
 
 # 2. processing (the Spark core)
 python -m src.process.trip_match

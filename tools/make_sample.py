@@ -142,7 +142,7 @@ def build(out: Path, cfg: dict, scale: float) -> None:
     _write(g / "routes", pd.DataFrame(routes))
     _write(g / "trips", pd.DataFrame(trips))
     _write(g / "stop_times", st_df)
-    _write(out / "weather", pd.DataFrame(weather))
+    _write(out / "weather", pd.DataFrame(weather), single="weather.parquet")
     _write(out / "imd", imd, single="imd.parquet")
     _write(out / "stop_imd", pd.DataFrame(stop_imd_rows), single="stop_imd.parquet")
 
