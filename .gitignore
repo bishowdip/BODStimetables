@@ -25,7 +25,10 @@ data/*.pb
 # Database artefacts (rebuilt by load_db.py)
 *.sqlite
 *.db
-!data/sample/*.db
+
+# Keep the small committed sample (overrides the data/parquet + *.parquet rules)
+!data/sample/
+!data/sample/**
 
 # Local config with paths / optional keys
 config/settings.local.yaml

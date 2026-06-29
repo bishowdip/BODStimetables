@@ -84,7 +84,18 @@ def route_deprivation(spark, cfg) -> None:
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = load_config()
-    stops_to_imd(cfg)
+
+    # The spatial join needs geopandas + the LSOA polygons. If they aren't set up
+    # (or stop_imd was already provided, e.g. the committed sample), skip straight
+    # to the route-level roll-up.
+    stop_imd = project_path(cfg["paths"]["parquet"]) / "stop_imd" / "stop_imd.parquet"
+    try:
+        stops_to_imd(cfg)
+    except (ImportError, FileNotFoundError) as exc:
+        if stop_imd.exists():
+            log.warning("spatial join skipped (%s); using existing stop_imd", exc)
+        else:
+            raise
 
     spark = get_spark("equity_join")
     try:
