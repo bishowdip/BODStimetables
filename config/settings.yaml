@@ -51,6 +51,13 @@ sources:
   ndl_archive_base: https://data.bus-data.dft.gov.uk/  # placeholder; set the real archive base
   open_meteo_archive: https://archive-api.open-meteo.com/v1/archive
   rate_limit_per_sec: 1
+  # URL templates filled with {date}=YYYY-MM-DD by download_archive.py.
+  # Set these to the real archive paths you have access to before running ingest.
+  # timetable_url_template: "https://.../timetables/{date}/wy.zip"
+  # gtfsrt_url_template:    "https://.../gtfsrt/{date}/snapshots.dat"
+  # Local paths for the supplementary datasets (download once, by hand):
+  # imd_csv:       data/raw/imd2019.csv
+  # lsoa_geojson:  data/raw/lsoa_2011.geojson
 
 spark:
   app_name: bods-reliability-wy
