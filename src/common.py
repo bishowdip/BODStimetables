@@ -15,6 +15,23 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _load_dotenv() -> None:
+    """Load KEY=VALUE lines from a repo-root .env into os.environ (if not already set).
+
+    Keeps secrets (e.g. BODS_API_KEY) out of the repo and config -- .env is
+    git-ignored. No external dependency.
+    """
+    env_path = ROOT / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
 @lru_cache(maxsize=None)
 def load_config(path: str | None = None) -> dict:
     """Load settings.yaml, then overlay settings.local.yaml if it exists.
@@ -22,6 +39,7 @@ def load_config(path: str | None = None) -> dict:
     The local file is git-ignored, so machine-specific paths or optional keys
     stay off GitHub.
     """
+    _load_dotenv()
     cfg_path = Path(path) if path else ROOT / "config" / "settings.yaml"
     with open(cfg_path) as fh:
         cfg = yaml.safe_load(fh)
