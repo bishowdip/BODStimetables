@@ -43,8 +43,15 @@ def stops_to_imd(cfg) -> "object":
 
     imd = pd.read_parquet(pq / "imd" / "imd.parquet")
     imd_code = next((c for c in imd.columns if "lsoa" in c.lower() and "code" in c.lower()), imd.columns[0])
-    dec_col = next((c for c in imd.columns if "decile" in c.lower()), None)
-    sco_col = next((c for c in imd.columns if "score" in c.lower()), None)
+
+    def pick(kind: str):
+        # prefer the overall IMD column, not a sub-domain (Income/Crime/etc.)
+        overall = [c for c in imd.columns if kind in c.lower() and "multiple deprivation" in c.lower()]
+        any_ = [c for c in imd.columns if kind in c.lower()]
+        return (overall or any_ or [None])[0]
+
+    dec_col = pick("decile")
+    sco_col = pick("score")
     imd = imd.rename(columns={imd_code: "lsoa_code"})
     keep = ["lsoa_code"] + [c for c in (dec_col, sco_col) if c]
     out = joined[["stop_id", "lsoa_code"]].merge(imd[keep], on="lsoa_code", how="left")

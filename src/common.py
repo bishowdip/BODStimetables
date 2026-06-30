@@ -30,6 +30,14 @@ def load_config(path: str | None = None) -> dict:
     if local.exists():
         with open(local) as fh:
             _deep_update(cfg, yaml.safe_load(fh) or {})
+
+    # YAML parses bare YYYY-MM-DD as datetime.date; the pipeline uses ISO strings
+    # for paths and joins, so normalise here once.
+    dates = cfg.get("window", {}).get("dates")
+    if dates:
+        cfg["window"]["dates"] = [
+            d.isoformat() if hasattr(d, "isoformat") else str(d) for d in dates
+        ]
     return cfg
 
 

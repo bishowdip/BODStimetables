@@ -64,9 +64,12 @@ sources:
   # timetable_url_template: "https://.../timetables/{date}/wy.zip"
   # gtfsrt_url_template:    "https://.../gtfsrt/{date}/snapshots.dat"
 
-  # --- Supplementary datasets (download once, by hand; bot-protected sites). ---
-  # imd_csv:       data/raw/imd2019.csv      # IoD2019 File 7 (LSOA scores/deciles)
-  # lsoa_geojson:  data/raw/lsoa_2011.geojson # ONS LSOA 2011 boundaries (WY subset)
+  # --- Supplementary datasets (download_supplementary.py fetches these). ---
+  imd_url: https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/845345/File_7_-_All_IoD2019_Scores__Ranks__Deciles_and_Population_Denominators_3.csv
+  lsoa_url: https://raw.githubusercontent.com/gausie/LSOA-2011-GeoJSON/master/lsoa.geojson
+  # local paths the loader reads (set by download_supplementary.py):
+  imd_csv:      data/raw/imd2019.csv          # IoD2019 File 7 (LSOA scores/deciles)
+  lsoa_geojson: data/raw/lsoa_wy.geojson      # LSOA 2011 boundaries, WY subset
 
 spark:
   app_name: bods-reliability-wy
