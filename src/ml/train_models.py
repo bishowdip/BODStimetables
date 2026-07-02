@@ -42,6 +42,7 @@ CATEGORICAL = ["day_of_week", "time_band"]
 NUMERIC = [
     "n_stops", "n_trips", "precip_mm", "temp_c", "wind_kph",
     "route_imd_decile", "route_hist_ontime_rate", "is_weekend",
+    "sched_headway_mean_min", "sched_headway_sd_min", "n_active_disruptions",
 ]
 
 

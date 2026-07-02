@@ -88,6 +88,29 @@ def run(spark, cfg) -> None:
     n = rbd.count()
     comp = rbd.filter(F.col("compliant") == 1).count()
     log.info("route-band-days: %d, compliant: %d (%.1f%%)", n, comp, 100.0 * comp / max(n, 1))
+
+    # ---- Travel Time Variability (brief metric: CV of trip duration, <=15%) ----
+    # actual duration per trip from inferred pass times; CV per route over the window
+    durations = (
+        delay.groupBy("trip_id", "route_id")
+        .agg(
+            ((F.max("inferred_sec") - F.min("inferred_sec")) / 60.0).alias("actual_dur_min"),
+            F.count("*").alias("stops_seen"),
+        )
+        .filter((F.col("stops_seen") >= 3) & (F.col("actual_dur_min") > 0))
+    )
+    ttv = (
+        durations.groupBy("route_id")
+        .agg(
+            F.avg("actual_dur_min").alias("mean_dur_min"),
+            F.stddev("actual_dur_min").alias("sd_dur_min"),
+            F.count("*").alias("n_trips_measured"),
+        )
+        .withColumn("ttv_cv", F.col("sd_dur_min") / F.col("mean_dur_min"))
+        .withColumn("ttv_ok", (F.col("ttv_cv") <= 0.15).cast("int"))
+    )
+    ttv.write.mode("overwrite").parquet(str(pq / "travel_time_variability"))
+    log.info("travel-time variability written for %d routes", ttv.count())
     delay.unpersist()
 
 

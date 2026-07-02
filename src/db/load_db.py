@@ -76,6 +76,20 @@ def build(cfg) -> None:
                 ["route_id", "service_date", "time_band", "day_of_week",
                  "n_trips", "pct_on_time", "sd_trip_delay", "compliant"])
 
+        # disruptions (optional -- present once SIRI-SX snapshots exist)
+        dis_dir = pq / "disruptions"
+        if dis_dir.exists() and any(dis_dir.glob("*.parquet")):
+            dis = _read_parquet_dir(dis_dir).drop_duplicates("situation_id")
+            dis["planned"] = dis["planned"].astype(int)
+            dis["wy_specific"] = dis["wy_specific"].astype(int)
+            _insert(conn, "fact_disruption", dis,
+                    ["situation_id", "reason", "planned", "progress", "summary",
+                     "validity_start", "validity_end", "n_affected_stops", "wy_specific"])
+            bridge = dis[dis.wy_stop_refs.astype(bool)][["situation_id", "wy_stop_refs"]].copy()
+            bridge = bridge.assign(stop_id=bridge.wy_stop_refs.str.split(",")).explode("stop_id")
+            _insert(conn, "disruption_stop", bridge.drop_duplicates(),
+                    ["situation_id", "stop_id"])
+
         conn.commit()
         log.info("warehouse built at %s", db_path)
     finally:

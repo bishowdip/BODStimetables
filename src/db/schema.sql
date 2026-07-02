@@ -58,6 +58,28 @@ CREATE TABLE fact_route_band_day (
     FOREIGN KEY (route_id) REFERENCES dim_route (route_id)
 );
 
+-- Disruptions (SIRI-SX situations); linked to routes through affected stops
+CREATE TABLE fact_disruption (
+    situation_id     TEXT PRIMARY KEY,
+    reason           TEXT,
+    planned          INTEGER,
+    progress         TEXT,
+    summary          TEXT,
+    validity_start   TEXT,
+    validity_end     TEXT,
+    n_affected_stops INTEGER,
+    wy_specific      INTEGER
+);
+
+CREATE TABLE disruption_stop (
+    situation_id TEXT,
+    stop_id      TEXT,
+    PRIMARY KEY (situation_id, stop_id),
+    FOREIGN KEY (situation_id) REFERENCES fact_disruption (situation_id),
+    FOREIGN KEY (stop_id) REFERENCES dim_stop (stop_id)
+);
+
 CREATE INDEX idx_rbd_route ON fact_route_band_day (route_id);
 CREATE INDEX idx_trip_route ON fact_trip_delay (route_id);
 CREATE INDEX idx_stop_lsoa ON dim_stop (lsoa_code);
+CREATE INDEX idx_disruption_stop ON disruption_stop (stop_id);
