@@ -111,6 +111,32 @@ def _ensure_compatible_java() -> None:
             return
 
 
+def stage_timer(stage: str):
+    """Context manager that appends wall-clock seconds for a pipeline stage to
+    docs/results/timings.json -- the Algorithmic Efficiency evidence. Usage:
+
+        with stage_timer("trip_match"):
+            run(...)
+    """
+    import json
+    import time
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _timer():
+        t0 = time.perf_counter()
+        yield
+        elapsed = round(time.perf_counter() - t0, 2)
+        path = ROOT / "docs" / "results" / "timings.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        entries = json.loads(path.read_text()) if path.exists() else []
+        entries.append({"stage": stage, "seconds": elapsed,
+                        "at": time.strftime("%Y-%m-%d %H:%M:%S")})
+        path.write_text(json.dumps(entries, indent=2))
+
+    return _timer()
+
+
 def get_spark(app_suffix: str = ""):
     """Build (or fetch) the SparkSession used across the pipeline.
 

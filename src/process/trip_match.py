@@ -80,14 +80,25 @@ def run(spark, cfg) -> None:
         .filter(F.col("dist_m") <= radius)
     )
 
-    # nearest ping per (trip, stop) -> inferred pass time
+    # nearest ping per (trip, day, stop) -> inferred pass time. service_date
+    # must be in the partition: the same trip_id runs every day, and without it
+    # the window would keep a single ping across the whole week.
     from pyspark.sql.window import Window
 
-    w = Window.partitionBy("trip_id", "stop_id").orderBy(F.col("dist_m").asc())
+    w = Window.partitionBy("trip_id", "service_date", "stop_id").orderBy(F.col("dist_m").asc())
     nearest = (
         joined.withColumn("rk", F.row_number().over(w))
         .filter(F.col("rk") == 1)
         .withColumn("inferred_sec", F.hour("ts_utc") * 3600 + F.minute("ts_utc") * 60 + F.second("ts_utc"))
+    )
+
+    # Delay, wrapped to the nearest day boundary: GTFS times run past 24:00
+    # (see src.geo.wrap_delay_s for the reasoning and unit tests).
+    raw = F.col("inferred_sec") - F.col("sched_sec")
+    wrapped = (
+        F.when(raw <= -43_200, raw + 86_400)
+        .when(raw > 43_200, raw - 86_400)
+        .otherwise(raw)
     )
 
     delay = nearest.select(
@@ -98,7 +109,7 @@ def run(spark, cfg) -> None:
         "stop_sequence",
         "sched_sec",
         "inferred_sec",
-        F.round((F.col("inferred_sec") - F.col("sched_sec")) / 60.0, 2).alias("delay_min"),
+        F.round(wrapped / 60.0, 2).alias("delay_min"),
         F.col("dist_m"),
     )
 
@@ -115,10 +126,13 @@ def run(spark, cfg) -> None:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    from src.common import stage_timer
+
     cfg = load_config()
     spark = get_spark("trip_match")
     try:
-        run(spark, cfg)
+        with stage_timer("trip_match"):
+            run(spark, cfg)
     finally:
         spark.stop()
 
