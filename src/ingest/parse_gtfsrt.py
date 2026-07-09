@@ -1,19 +1,22 @@
-"""Parse archived GTFS-RT protobuf snapshots, filter to West Yorkshire, write Parquet.
+"""Parse captured GTFS-RT snapshots into per-day position Parquet.
 
-The national feed is large, so each snapshot file is parsed and discarded in turn
-(parse-and-stream) rather than held in memory all at once -- this is the part the
-report flags as *why* we cannot just load everything into pandas. Only the small,
-bbox-filtered result is written out, partitioned by service_date so Spark can
-prune by date later.
+Snapshots arrive one per minute, but vehicles report on their own cadence, so
+consecutive snapshots repeat pings. We deduplicate on (vehicle_id, timestamp):
+the same report seen twice is one observation. Rows are accumulated as tuples
+rather than dicts to keep a full day (~2M pings) cheap in memory, and each day
+is written independently so a failed day can be re-run alone.
 
-Input layout (produced by download_archive.py):
-    data/raw/<service_date>/*.pb | *.dat   (one or many FeedMessage files)
-Output:
-    data/parquet/positions/service_date=<date>/part-*.parquet
+Input:   data/raw/<date>/*.pb            (one FeedMessage per snapshot)
+Output:  data/parquet/positions/service_date=<date>/part-0.parquet
+         docs/results/parse_quality.json (per-day quality counters)
+
+The feed is already server-side filtered to the WY bounding box; the bbox check
+here is a guard against feed glitches, and anything it drops is counted.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,87 +28,104 @@ from src.common import load_config, project_path
 
 log = logging.getLogger("parse_gtfsrt")
 
-SNAPSHOT_GLOBS = ("*.pb", "*.dat", "*.bin")
+COLUMNS = ["vehicle_id", "trip_id", "route_id", "lat", "lon", "bearing", "ts"]
 
 
-def _in_bbox(lat: float, lon: float, bbox: dict) -> bool:
-    return (
-        bbox["min_lat"] <= lat <= bbox["max_lat"]
-        and bbox["min_lon"] <= lon <= bbox["max_lon"]
-    )
-
-
-def _iter_positions(path: Path, bbox: dict):
-    """Yield bbox-filtered vehicle-position rows from one FeedMessage file."""
+def _parse_snapshot(path: Path, bbox: dict) -> tuple[list[tuple], int]:
+    """One FeedMessage -> (rows, n_dropped_out_of_bbox)."""
     feed = gtfs_realtime_pb2.FeedMessage()
     feed.ParseFromString(path.read_bytes())
+    rows: list[tuple] = []
+    dropped = 0
     for entity in feed.entity:
         if not entity.HasField("vehicle"):
             continue
         v = entity.vehicle
         pos = v.position
-        if not _in_bbox(pos.latitude, pos.longitude, bbox):
+        if not (
+            bbox["min_lat"] <= pos.latitude <= bbox["max_lat"]
+            and bbox["min_lon"] <= pos.longitude <= bbox["max_lon"]
+        ):
+            dropped += 1
             continue
-        ts = v.timestamp or feed.header.timestamp
-        yield {
-            "vehicle_id": v.vehicle.id or entity.id,
-            "trip_id": v.trip.trip_id or None,
-            "route_id": v.trip.route_id or None,
-            "lat": float(pos.latitude),
-            "lon": float(pos.longitude),
-            "bearing": float(pos.bearing) if pos.HasField("bearing") else None,
-            "ts": int(ts),
-            "ts_utc": datetime.fromtimestamp(ts, tz=timezone.utc) if ts else None,
-        }
+        rows.append(
+            (
+                v.vehicle.id or entity.id,
+                v.trip.trip_id or None,
+                v.trip.route_id or None,
+                float(pos.latitude),
+                float(pos.longitude),
+                float(pos.bearing) if pos.HasField("bearing") else None,
+                int(v.timestamp or feed.header.timestamp),
+            )
+        )
+    return rows, dropped
 
 
-def parse_date(date: str, raw_root: Path, out_root: Path, bbox: dict) -> int:
-    src_dir = raw_root / date
-    if not src_dir.exists():
-        log.warning("no raw dir for %s -- skipping", date)
-        return 0
-
-    files: list[Path] = []
-    for pattern in SNAPSHOT_GLOBS:
-        files.extend(sorted(src_dir.glob(pattern)))
+def parse_day(date: str, raw_root: Path, out_root: Path, bbox: dict) -> dict | None:
+    """Parse every snapshot for one service date; return quality counters."""
+    files = sorted((raw_root / date).glob("*.pb"))
     if not files:
-        log.warning("no snapshot files under %s", src_dir)
-        return 0
+        return None
 
-    rows: list[dict] = []
+    rows: list[tuple] = []
+    corrupt = out_of_bbox = 0
     for fp in files:
         try:
-            rows.extend(_iter_positions(fp, bbox))
-        except Exception as exc:  # a corrupt snapshot shouldn't kill the run
-            log.warning("could not parse %s: %s", fp.name, exc)
+            got, dropped = _parse_snapshot(fp, bbox)
+            rows.extend(got)
+            out_of_bbox += dropped
+        except Exception as exc:  # one corrupt snapshot must not kill the day
+            corrupt += 1
+            log.warning("unreadable snapshot %s: %s", fp.name, exc)
 
-    if not rows:
-        log.info("%s: no in-bbox positions", date)
-        return 0
+    raw_n = len(rows)
+    df = pd.DataFrame(rows, columns=COLUMNS)
+    df = df.drop_duplicates(subset=["vehicle_id", "ts"]).sort_values(["vehicle_id", "ts"])
+    df["ts_utc"] = pd.to_datetime(df["ts"], unit="s", utc=True)
 
-    df = pd.DataFrame(rows)
-    df["service_date"] = date
     out_dir = out_root / "positions" / f"service_date={date}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    df.drop(columns="service_date").to_parquet(out_dir / "part-0.parquet", index=False)
-    log.info("%s: wrote %d positions from %d files", date, len(df), len(files))
-    return len(df)
+    df.to_parquet(out_dir / "part-0.parquet", index=False)
+
+    stats = {
+        "date": date,
+        "snapshots": len(files),
+        "corrupt_snapshots": corrupt,
+        "raw_pings": raw_n,
+        "deduped_pings": len(df),
+        "duplicate_share": round(1 - len(df) / raw_n, 4) if raw_n else 0.0,
+        "out_of_bbox": out_of_bbox,
+        "with_trip_id": int(df["trip_id"].notna().sum()),
+        "trip_id_share": round(float(df["trip_id"].notna().mean()), 4) if len(df) else 0.0,
+    }
+    log.info(
+        "%s: %d snapshots -> %s pings (%.1f%% duplicates dropped, %.1f%% with trip_id)",
+        date, len(files), f"{len(df):,}",
+        100 * stats["duplicate_share"], 100 * stats["trip_id_share"],
+    )
+    return stats
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--dates", nargs="*")
+    ap.add_argument("--dates", nargs="*", help="override the window dates from config")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = load_config()
     dates = args.dates or cfg["window"]["dates"]
-    bbox = cfg["region"]["bbox"]
     raw_root = project_path(cfg["paths"]["raw"])
     out_root = project_path(cfg["paths"]["parquet"])
+    bbox = cfg["region"]["bbox"]
 
-    total = sum(parse_date(d, raw_root, out_root, bbox) for d in dates)
-    log.info("total WY positions written: %d", total)
+    all_stats = [s for d in dates if (s := parse_day(d, raw_root, out_root, bbox))]
+    total = sum(s["deduped_pings"] for s in all_stats)
+
+    results = project_path("docs", "results")
+    results.mkdir(parents=True, exist_ok=True)
+    (results / "parse_quality.json").write_text(json.dumps(all_stats, indent=2))
+    log.info("done: %s positions across %d days", f"{total:,}", len(all_stats))
 
 
 if __name__ == "__main__":
