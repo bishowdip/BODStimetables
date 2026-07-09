@@ -31,3 +31,23 @@ def time_band(hour: int, bands: dict[str, tuple[int, int]]) -> str | None:
         if lo <= hour < hi:
             return name
     return None
+
+
+DAY_S = 86_400
+
+
+def wrap_delay_s(inferred_s: float, sched_s: float) -> float:
+    """Delay in seconds, wrapped to the nearest day boundary.
+
+    GTFS schedules run past midnight (25:10:00 is valid), while an observed
+    clock time restarts at 00:00. Comparing them naively makes a bus that is
+    5 min late on a 24:05 arrival look ~24 h early. Wrapping the difference to
+    the interval (-12 h, +12 h] recovers the real delay; no genuine bus delay
+    approaches 12 h, so the wrap is unambiguous.
+    """
+    delay = inferred_s - sched_s
+    while delay <= -DAY_S / 2:
+        delay += DAY_S
+    while delay > DAY_S / 2:
+        delay -= DAY_S
+    return delay

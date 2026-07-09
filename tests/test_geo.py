@@ -35,3 +35,25 @@ def test_time_band_assignment():
     assert time_band(17, BANDS) == "pm_peak"
     assert time_band(21, BANDS) == "evening"
     assert time_band(3, BANDS) is None  # outside all bands
+
+
+def test_wrap_delay_plain_case():
+    from src.geo import wrap_delay_s
+
+    # bus observed 3 min after schedule, same day: no wrap needed
+    assert wrap_delay_s(10 * 3600 + 180, 10 * 3600) == 180
+
+
+def test_wrap_delay_after_midnight_schedule():
+    from src.geo import wrap_delay_s
+
+    # scheduled 24:05 (86700s), observed 00:10 next clock day (600s):
+    # naive diff is -86100s; the real delay is +5 min
+    assert wrap_delay_s(600, 86_700) == 300
+
+
+def test_wrap_delay_early_before_midnight():
+    from src.geo import wrap_delay_s
+
+    # scheduled 00:02 (i.e. 24:02 as 120s next day), bus passes 23:58 -> 4 min early
+    assert wrap_delay_s(86_280, 120) == -240
