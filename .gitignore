@@ -26,9 +26,6 @@ data/*.pb
 *.sqlite
 *.db
 
-# Keep the small committed sample (overrides the data/parquet + *.parquet rules)
-!data/sample/
-!data/sample/**
 
 # Local config with paths / optional keys
 config/settings.local.yaml

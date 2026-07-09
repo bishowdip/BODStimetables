@@ -1,141 +1,61 @@
-# Who Gets the Worst Bus? Bus service reliability and equity in West Yorkshire
+# Bus Reliability and Deprivation in West Yorkshire
 
-Big Data Programming Project (ST5011CEM). The pipeline measures route-level
-service reliability against the regulator's 85% on-time bar using real BODS
-timetables and archived live vehicle positions, predicts non-compliance from
-features known *before* a trip runs, and tests whether failures concentrate on
-routes serving the most deprived areas.
+ST5011CEM Big Data project. Measures how reliably West Yorkshire buses run
+against the 85% on-time standard (±2 min), predicts which route/time-band/day
+combinations will fail it, and checks whether unreliability falls hardest on
+routes serving deprived areas.
 
-## What it does
+## Data
 
-1. **Ingest** – rate-limited download of archived GTFS-RT positions and daily
-   GTFS timetables for a 7-day window, plus hourly weather (Open-Meteo), IMD
-   2019 deprivation and LSOA boundaries. Everything is filtered to the West
-   Yorkshire bounding box and written to Parquet.
-2. **Process (Spark)** – match positions to scheduled stop times, infer per-stop
-   delay, roll up to a per-trip on-time rate, then aggregate to
-   route × time-band × service-day with a `compliant` flag (>=85% on time, ±2 min).
-3. **Store** – load the star schema into SQLite via parameterised queries.
-4. **Model (MLlib)** – Logistic Regression, Random Forest and Gradient-Boosted
-   Trees on an identical, leakage-safe feature set with a time-aware split.
-5. **Visualise** – reliability map, compliance vs IMD decile, model comparison.
+All real, no synthetic rows:
+
+- **BODS timetables** – Yorkshire GTFS download (2.5M+ stop_times after
+  filtering to West Yorkshire)
+- **BODS vehicle positions** – GTFS-RT live feed, self-archived at 60s
+  intervals over a 7-day window (the feed is live-only, so it has to be
+  captured as it happens)
+- **BODS disruptions** – SIRI-SX feed, snapshotted 6-hourly over the same window
+- **IMD 2019** (gov.uk), **LSOA 2011 boundaries** (ONS), **hourly weather**
+  (Open-Meteo) as supplementary joins
+
+A free BODS API key is needed for the two live feeds. Put it in a `.env` file
+as `BODS_API_KEY=...` — it is git-ignored and nothing else needs a key.
 
 ## Setup
 
-Tested on macOS (Apple Silicon) with Python 3.13 and a JDK on the path.
+Needs Python 3.13 and Java 17 or 21 (Spark 4 does not run on Java 24+; the
+code picks a compatible JDK automatically if you have several).
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Spark 4 runs on Java 17 or 21. Check `java -version`; if you need to pin it:
+## Running
+
+Dates, bounding box and thresholds live in `config/settings.yaml`.
 
 ```bash
-export JAVA_HOME=$(/usr/libexec/java_home -v 17)   # or -v 21
-```
+# collect (positions need to run across the study window)
+python -m src.ingest.download_timetable
+python -m src.ingest.download_supplementary
+python -m src.ingest.fetch_weather
+python -m src.ingest.poll_live --hours 168
+python -m src.ingest.fetch_disruptions --every-hours 6 --for-hours 168
 
-## Quick smoke test (no download)
-
-To exercise the whole pipeline on a tiny synthetic dataset in the same layout as
-the real feeds, generate it and run from the processing stage onwards:
-
-```bash
-python -m tools.make_sample          # writes data/parquet/ in the ingest-stage layout
+# process (Spark)
+python -m src.ingest.parse_gtfsrt
+python -m src.ingest.load_static
 python -m src.process.trip_match
 python -m src.process.compute_reliability
+python -m src.process.headway
 python -m src.process.equity_join
+
+# store, model, plot
 python -m src.db.load_db
 python -m src.ml.features && python -m src.ml.train_models && python -m src.ml.evaluate
 python -m src.viz.plots && python -m src.viz.map
 ```
 
-A small committed copy of that sample also lives in `data/sample/` for
-inspection (point `paths.parquet` at it in `config/settings.local.yaml` to run
-against it directly). Run `python -m pytest` for the unit tests.
-
-> On a Mac with multiple JDKs, `get_spark` auto-selects a Spark-compatible Java
-> (17/21) — Spark 4 does not run on Java 24+.
-
-## Run order (full pipeline on real data)
-
-The scripts read everything from `config/settings.yaml` (study dates, bbox,
-on-time thresholds, paths). Edit that first, then:
-
-Get the data first. The dated NDL archive only retained ~64 days, so for a
-current window self-archive the live BODS feed (free account at
-data.bus-data.dft.gov.uk; the key is read from `$BODS_API_KEY`, never stored):
-
-```bash
-export BODS_API_KEY=...                       # your free BODS key
-
-# collect a 7-day window of WY positions (run in the background; bbox-filtered)
-nohup python -m src.ingest.poll_live --hours 168 > poll.log 2>&1 &
-
-python -m src.ingest.download_timetable       # current regional GTFS (Yorkshire)
-```
-
-Download the two keyless supplementary datasets once by hand (the gov portals
-are bot-protected), save them to `data/raw/`, and set `imd_csv` / `lsoa_geojson`
-in `config/settings.yaml`:
-- IMD 2019 "File 7" LSOA scores/deciles — gov.uk English indices of deprivation
-- LSOA 2011 boundaries — ONS Open Geography Portal (WY subset is enough)
-
-Then run the pipeline:
-
-```bash
-# 1. ingestion  (writes Parquet under data/parquet/, partitioned by service_date)
-python -m src.ingest.parse_gtfsrt             # parse the polled snapshots -> Parquet
-python -m src.ingest.load_static              # GTFS timetable + IMD + LSOA -> Parquet
-python -m src.ingest.fetch_weather            # Open-Meteo (no key)
-# (src.ingest.download_archive is the alternative if you have a dated archive)
-
-# 2. processing (the Spark core)
-python -m src.process.trip_match
-python -m src.process.compute_reliability
-python -m src.process.equity_join
-
-# 3. database
-python -m src.db.load_db
-
-# 4. machine learning
-python -m src.ml.features
-python -m src.ml.train_models
-python -m src.ml.evaluate
-
-# 5. visualisation
-python -m src.viz.plots
-python -m src.viz.map
-
-# 6. deliverables: SQL dump + diagrams + interactive dashboard
-python -m src.db.dump            # -> data/reliability_dump.sql
-python -m tools.make_diagrams    # -> docs/architecture.png, docs/schema.png
-streamlit run src/viz/dashboard.py
-```
-
-A small committed sample lives in `data/sample/` so the processing and ML stages
-can be smoke-tested without the full multi-GB download.
-
-## Repository map
-
-```
-config/      settings.yaml – bbox, dates, thresholds, paths (no secrets)
-data/sample/ small committed sample for testing
-src/ingest/  download + parse + static loaders
-src/process/ trip matching, reliability, equity join (PySpark)
-src/db/      schema.sql, loader, parameterised query examples
-src/ml/      feature build, model training, evaluation
-src/viz/     matplotlib + folium outputs
-notebooks/   01_eda, 02_results
-docs/        architecture + schema diagrams, Spark UI screenshots
-tests/       unit tests for the matching + feature logic
-```
-
-## Notes
-
-- Open-Meteo needs no API key; SQLite is keyless. There are no credentials in
-  this repo. Any machine-specific override goes in `config/settings.local.yaml`,
-  which is git-ignored.
-- Raw downloads and generated Parquet are git-ignored — rerun the ingest scripts
-  to regenerate them.
+`python -m pytest` runs the tests. Raw downloads and generated outputs are
+git-ignored; every artefact is reproducible from the commands above.
