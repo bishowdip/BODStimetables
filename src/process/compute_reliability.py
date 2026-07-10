@@ -60,18 +60,9 @@ def run(spark, cfg) -> None:
 
     trip.write.mode("overwrite").partitionBy("service_date").parquet(str(pq / "fact_trip_delay"))
 
-    # ---- AVL-confirmed operation rate (the honest no-show proxy) ----
-    scheduled = (
-        spark.read.parquet(str(pq / "gtfs" / "stop_times"))
-        .select("trip_id").distinct()
-    )
-    matched = trip.select("trip_id").distinct()
-    confirmed = matched.count()
-    sched_n = scheduled.count()
-    log.info(
-        "AVL-confirmed trips: %d of %d scheduled (%.1f%% floor)",
-        confirmed, sched_n, 100.0 * confirmed / max(sched_n, 1),
-    )
+    # AVL-confirmed operation lives in match_stats.py, which checks matched
+    # trips against the trips actually scheduled each day via GTFS calendar --
+    # comparing against the whole timetable here would understate the floor.
 
     # ---- route x time-band x day compliance label ----
     primary = f"on_time_{abs(lo)}_{hi}".replace("-", "")
