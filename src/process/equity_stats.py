@@ -104,11 +104,50 @@ def main() -> None:
     }
     gap["gap_percentage_points"] = round(100 * (gap["deciles_8_10_compliance"] - gap["deciles_1_3_compliance"]), 2)
 
+    # The two headline correlations disagree in sign, and the reason is the
+    # threshold metric itself: with few trips in a band, pct_on_time is noisy
+    # and clears 0.85 stochastically; with many trips it concentrates near its
+    # mean (~0.6) and almost never clears. Deprived areas run the frequent
+    # services, so threshold compliance is biased against them even though
+    # their raw punctuality is no worse. Quantified here so the report's claim
+    # is reproducible.
+    conn = sqlite3.connect(project_path(cfg["paths"]["db"]))
+    try:
+        bands = pd.read_sql_query(
+            """
+            SELECT f.n_trips, f.compliant, f.pct_on_time,
+                   r.route_imd_decile AS imd
+            FROM fact_route_band_day f JOIN dim_route r USING (route_id)
+            WHERE r.route_imd_decile IS NOT NULL
+            """,
+            conn,
+        )
+    finally:
+        conn.close()
+
+    def _rho(a: pd.Series, b: pd.Series) -> float:
+        return round(float(np.corrcoef(a.rank(), b.rank())[0, 1]), 4)
+
+    buckets = pd.cut(bands.n_trips, [0, 2, 5, 10, 20, np.inf],
+                     labels=["1-2", "3-5", "6-10", "11-20", "20+"])
+    by_bucket = (
+        bands.groupby(buckets, observed=True)
+        .agg(compliance=("compliant", "mean"), on_time=("pct_on_time", "mean"), n=("compliant", "size"))
+        .round(4).reset_index(names="trips_per_band")
+    )
+    frequency_confound = {
+        "rho_n_trips_vs_imd_decile": _rho(bands.n_trips, bands.imd),
+        "rho_n_trips_vs_compliant": _rho(bands.n_trips, bands.compliant),
+        "rho_n_trips_vs_pct_on_time": _rho(bands.n_trips, bands.pct_on_time),
+        "compliance_by_trips_per_band": by_bucket.to_dict(orient="records"),
+    }
+
     out = {
         "min_band_days_per_route": MIN_BAND_DAYS,
         "correlation_imd_vs_compliance": stats_compliance,
         "correlation_imd_vs_on_time": stats_on_time,
         "deprivation_gap": gap,
+        "frequency_confound": frequency_confound,
         "by_decile": deciles.round(4).to_dict(orient="records"),
     }
     results = project_path("docs", "results")
