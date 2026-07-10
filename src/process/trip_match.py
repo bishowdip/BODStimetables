@@ -125,6 +125,14 @@ def run(spark, cfg) -> None:
 
 
 def main() -> None:
+    import argparse
+
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--hold", type=int, default=0,
+                    help="keep the Spark UI (localhost:4040) alive N seconds after "
+                         "finishing, so the Stages tab can be captured")
+    args = ap.parse_args()
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     from src.common import stage_timer
 
@@ -133,6 +141,11 @@ def main() -> None:
     try:
         with stage_timer("trip_match"):
             run(spark, cfg)
+        if args.hold:
+            import time
+
+            log.info("holding Spark UI at http://localhost:4040 for %ds", args.hold)
+            time.sleep(args.hold)
     finally:
         spark.stop()
 
