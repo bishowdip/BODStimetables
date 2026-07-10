@@ -34,7 +34,12 @@ def run(spark, cfg) -> None:
     rel = cfg["reliability"]
     lo, hi = rel["ontime_lower_min"], rel["ontime_upper_min"]
 
-    delay = spark.read.parquet(str(pq / "trip_stop_delay")).cache()
+    delay = spark.read.parquet(str(pq / "trip_stop_delay"))
+    raw_n = delay.count()
+    delay = delay.filter(F.abs(F.col("delay_min")) <= rel["max_abs_delay_min"]).cache()
+    kept_n = delay.count()
+    log.info("outlier filter (|delay| <= %d min): kept %s of %s stop events (%.2f%% dropped)",
+             rel["max_abs_delay_min"], f"{kept_n:,}", f"{raw_n:,}", 100 * (1 - kept_n / raw_n))
 
     # ---- per-trip on-time (primary + sensitivity bands) ----
     band_min = [(lo, hi)] + [(-b, b) for b in rel["sensitivity_bands_min"]]

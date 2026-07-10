@@ -30,6 +30,9 @@ reliability:
   sensitivity_bands_min: [3, 5]
   compliance_threshold: 0.85
   stop_match_radius_m: 50
+  # stop events with |delay| above this are GPS/matching artefacts, not service
+  # behaviour (about 1% of matches in the study window) -- dropped and counted
+  max_abs_delay_min: 60
   time_bands:
     am_peak: [7, 9]
     inter_peak: [9, 16]
