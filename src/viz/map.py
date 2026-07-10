@@ -1,9 +1,9 @@
-"""Reliability map (folium).
+"""Reliability map (folium): each stop coloured by its measured on-time rate.
 
-Plots each WY stop coloured by the mean on-time rate of the routes that serve it,
-so the spatial pattern of unreliability -- and how it lines up with deprivation --
-is visible. Reads only the small per-stop aggregate. Output is a standalone HTML
-saved to docs/figures/reliability_map.html.
+Stop-level delays come straight from the matched trip_stop_delay table, so the
+map shows where the network is actually late, not a route average smeared over
+stops. Stops with too few observations are dropped rather than shown with a
+noisy colour. Output: docs/figures/reliability_map.html (standalone).
 """
 from __future__ import annotations
 
@@ -12,38 +12,38 @@ import logging
 import pandas as pd
 
 from src.common import load_config, project_path
-from src.db.queries import connect
 
 log = logging.getLogger("map")
 FIGS = project_path("docs", "figures")
 
+MIN_EVENTS = 20  # a stop needs this many matched passes for a stable rate
 
-def _stop_reliability() -> pd.DataFrame:
-    conn = connect()
-    try:
-        # Reliability is computed per route; dim_stop has no route_id, so for the
-        # map we colour each stop by the window-wide mean on-time rate and tag it
-        # with its IMD decile. (A per-stop route join is in the EDA notebook.)
-        return pd.read_sql_query(
-            """
-            SELECT s.stop_id, s.lat, s.lon, s.name, l.imd_decile,
-                   (SELECT AVG(f.pct_on_time) FROM fact_route_band_day f) AS on_time
-            FROM dim_stop s
-            LEFT JOIN dim_lsoa l ON l.lsoa_code = s.lsoa_code
-            WHERE s.lat IS NOT NULL
-            """,
-            conn,
-        )
-    finally:
-        conn.close()
+
+def _stop_reliability(cfg) -> pd.DataFrame:
+    pq = project_path(cfg["paths"]["parquet"])
+    lo = cfg["reliability"]["ontime_lower_min"]
+    hi = cfg["reliability"]["ontime_upper_min"]
+
+    events = pd.read_parquet(pq / "trip_stop_delay", columns=["stop_id", "delay_min"])
+    events["on_time"] = events.delay_min.between(lo, hi)
+    per_stop = (
+        events.groupby("stop_id")
+        .agg(on_time=("on_time", "mean"), n_events=("on_time", "size"))
+        .query("n_events >= @MIN_EVENTS")
+        .reset_index()
+    )
+
+    stops = pd.read_parquet(pq / "gtfs" / "stops")[["stop_id", "stop_name", "stop_lat", "stop_lon"]]
+    imd = pd.read_parquet(pq / "stop_imd" / "stop_imd.parquet")[["stop_id", "imd_decile"]]
+    df = per_stop.merge(stops, on="stop_id").merge(imd, on="stop_id", how="left")
+    log.info("mappable stops: %d (>= %d matched passes each)", len(df), MIN_EVENTS)
+    return df
 
 
 def _colour(on_time: float) -> str:
-    if on_time is None:
-        return "gray"
     if on_time >= 0.85:
         return "green"
-    if on_time >= 0.7:
+    if on_time >= 0.60:
         return "orange"
     return "red"
 
@@ -55,23 +55,24 @@ def main() -> None:
     cfg = load_config()
     FIGS.mkdir(parents=True, exist_ok=True)
 
-    df = _stop_reliability()
+    df = _stop_reliability(cfg)
     if df.empty:
-        log.warning("no stops to map -- is the DB built?")
+        log.warning("no stops to map -- has trip matching run?")
         return
 
     bbox = cfg["region"]["bbox"]
     centre = [(bbox["min_lat"] + bbox["max_lat"]) / 2, (bbox["min_lon"] + bbox["max_lon"]) / 2]
     m = folium.Map(location=centre, zoom_start=11, tiles="cartodbpositron")
 
-    for _, r in df.iterrows():
+    for r in df.itertuples():
         folium.CircleMarker(
-            location=[r.lat, r.lon],
+            location=[r.stop_lat, r.stop_lon],
             radius=3,
             color=_colour(r.on_time),
             fill=True,
             fill_opacity=0.7,
-            popup=f"{r['name']} | IMD {r.imd_decile}",
+            popup=(f"{r.stop_name}<br>on-time {r.on_time:.0%} "
+                   f"({r.n_events} passes)<br>IMD decile {r.imd_decile}"),
         ).add_to(m)
 
     out = FIGS / "reliability_map.html"
