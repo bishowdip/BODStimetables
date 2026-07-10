@@ -87,8 +87,14 @@ def build(cfg) -> None:
                      "validity_start", "validity_end", "n_affected_stops", "wy_specific"])
             bridge = dis[dis.wy_stop_refs.astype(bool)][["situation_id", "wy_stop_refs"]].copy()
             bridge = bridge.assign(stop_id=bridge.wy_stop_refs.str.split(",")).explode("stop_id")
-            _insert(conn, "disruption_stop", bridge.drop_duplicates(),
-                    ["situation_id", "stop_id"])
+            # disruptions can reference ATCO codes absent from the current GTFS
+            # (withdrawn or edge-of-region stops); keep only known stops so the
+            # FK holds, and log how many refs fall away
+            known = set(stops["stop_id"])
+            before = len(bridge)
+            bridge = bridge[bridge.stop_id.isin(known)].drop_duplicates()
+            log.info("disruption_stop: %d of %d refs matched known stops", len(bridge), before)
+            _insert(conn, "disruption_stop", bridge, ["situation_id", "stop_id"])
 
         conn.commit()
         log.info("warehouse built at %s", db_path)
