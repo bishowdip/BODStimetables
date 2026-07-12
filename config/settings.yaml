@@ -47,7 +47,6 @@ split:
 paths:
   raw: data/raw
   parquet: data/parquet
-  sample: data/sample
   db: data/reliability.sqlite
 
 sources:
