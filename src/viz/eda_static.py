@@ -84,7 +84,7 @@ def run(spark, cfg, out_lines: list[str]) -> None:
     plt.tight_layout()
     plt.savefig(figs / "headway_distribution.png", dpi=150)
     plt.close()
-    emit(f"\nfigure saved: docs/figures/headway_distribution.png")
+    emit("\nfigure saved: docs/figures/headway_distribution.png")
     st.unpersist()
 
 

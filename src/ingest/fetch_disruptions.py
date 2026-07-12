@@ -21,7 +21,6 @@ import os
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
-from pathlib import Path
 
 import pandas as pd
 import requests

@@ -8,7 +8,7 @@ import glob
 import pandas as pd
 import pytest
 
-from src.common import load_config, project_path
+from src.common import project_path
 
 FEATURES = glob.glob(str(project_path("data/parquet/ml_features/*.parquet")))
 RBD = glob.glob(str(project_path("data/parquet/fact_route_band_day/*/*.parquet")))
