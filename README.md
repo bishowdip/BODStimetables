@@ -46,14 +46,25 @@ python -m src.ingest.fetch_disruptions --every-hours 6 --for-hours 168
 # process (Spark)
 python -m src.ingest.parse_gtfsrt
 python -m src.ingest.load_static
-python -m src.process.trip_match
+python -m src.process.trip_match          # --hold N keeps the Spark UI up
 python -m src.process.compute_reliability
 python -m src.process.headway
+python -m src.process.match_stats
+python -m src.process.sensitivity
 python -m src.process.equity_join
 
-# store, model, plot
-python -m src.db.load_db
-python -m src.ml.features && python -m src.ml.train_models && python -m src.ml.evaluate
+# store and analyse
+python -m src.db.load_db && python -m src.db.dump
+python -m src.process.equity_stats
+
+# model
+python -m src.ml.features
+python -m src.ml.train_models
+python -m src.ml.evaluate
+python -m src.ml.interpret
+
+# figures and map
+python -m src.viz.eda_static
 python -m src.viz.plots && python -m src.viz.map
 ```
 

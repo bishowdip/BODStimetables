@@ -1,52 +1,58 @@
-# Architecture
+# Architecture and performance notes
 
-Data ingestion -> processing -> storage/ML -> visualisation. Export this to
-`architecture.png` for the report (the marker expects an image).
+The pipeline runs in four layers: ingestion (plain Python), processing
+(PySpark), storage and models (SQLite, MLlib), and visualisation (pandas +
+matplotlib/folium on small aggregates). Parquet files partitioned by
+service_date are the hand-off between every stage, so any stage can be re-run
+alone. `docs/architecture.png` is the diagram; `tools/make_diagrams.py`
+regenerates it.
 
-```
- INGESTION (Python, rate-limited, I/O-bound)
-   download_archive.py  -> NDL GTFS-RT @60s + daily timetables
-   parse_gtfsrt.py      -> filter to WY bbox, write Parquet (parse-and-stream)
-   load_static.py       -> GTFS txt, IMD, LSOA -> Parquet
-   fetch_weather.py     -> Open-Meteo hourly -> Parquet
-        |  Parquet, partitioned by service_date
-        v
- PROCESSING (PySpark, the big-data core)
-   trip_match.py          -> positions <-> stop_times spatial-temporal join
-                             (broadcast small stops/routes; partition positions)
-   compute_reliability.py -> per-stop delay -> per-trip on-time -> AVL-confirmed
-                             -> route x time-band x day compliant flag
-   equity_join.py         -> stop -> LSOA -> IMD (GeoPandas, small) -> route IMD
-        |  intermediate Parquet checkpoints (persistence between stages)
-        v
- STORAGE (SQLite, parameterised)        ML (PySpark MLlib)
-   dim_route / dim_stop / dim_lsoa        features.py  (leakage-safe, time split)
-   fact_trip_delay                        train_models.py (LR / RF / GBT + CV)
-   fact_route_band_day  (ML input)        evaluate.py  (F1, ROC-AUC, F1/sec)
-        |                                       |
-        v                                       v
- VISUALISATION (small aggregates -> pandas -> matplotlib / folium)
-   reliability map  |  compliance x IMD decile  |  model comparison + ROC/PR
-```
-
-## Why the tool changes at each stage
+## Tool choice per stage
 
 | Stage | Tool | Reason |
 |---|---|---|
-| Download | Python `requests` | I/O-bound, capped at 1 req/s; Spark adds nothing |
-| Parse GTFS-RT | Python (stream) then Spark | parse-and-discard national files to bound memory |
-| Trip matching | PySpark | millions x thousands join; broadcast the small side |
-| Aggregation | PySpark SQL | groupBy/agg over millions of rows; lazy DAG |
-| Spatial join stop->LSOA | GeoPandas | only a few thousand unique stops -> not a big-data job |
-| Feature table + ML | PySpark MLlib | pipeline + CrossValidator at scale |
-| Plotting | pandas + matplotlib/folium | convert only the small aggregated outputs |
+| Collect positions and disruptions | Python (requests) | one HTTP call a minute is I/O-bound; Spark adds nothing |
+| Parse GTFS-RT snapshots | Python | each protobuf file is parsed and discarded, so memory stays flat |
+| Trip matching | PySpark | 4.9M positions joined to 2.6M stop_times is the distributed step |
+| Reliability aggregation | PySpark SQL | groupBy over millions of matched events |
+| Stop-to-LSOA join | GeoPandas | 16k stops is small; distributed tooling isn't justified at that size |
+| Feature build and models | PySpark MLlib | pipelines and CrossValidator on the shared session |
+| Plots and map | pandas + matplotlib/folium | only aggregated tables leave Spark |
 
-## Spark optimisation evidence (where to capture it)
+## Measured performance (M3 MacBook Air, local[*], 8 shuffle partitions)
 
-- `spark.sql.shuffle.partitions = 8` (set in `src/common.py`).
-- `broadcast(stops)` / `broadcast(routes)` in the trip-match and feature joins.
-- `.cache()` on the trip-level delay table (reused by aggregation + ML).
-- Parquet writes between stages = the persistence/checkpoint strategy.
-- Spark UI: run a stage, open `localhost:4040`, screenshot the **Stages** tab
-  during the big join (partition count + shuffle read/write) into
-  `docs/spark_ui_*.png`. Capture it *while the job runs*.
+- Parsing the full week (10,546 snapshots, 11.4M raw pings) takes about a
+  minute and writes 4.9M deduplicated rows.
+- The matching join runs in 17 to 28 seconds depending on cache state
+  (docs/results/timings.json).
+- Broadcasting the stops table cuts the join from 8.98s to 4.37s, a 2.05x
+  speedup with identical output (docs/results/broadcast_bench.json).
+- `docs/spark_ui_stages.png` shows the stage list for the real join: 8/8 tasks
+  per shuffle stage, shuffle reads up to 165 MiB, and nine skipped stages where
+  Spark reused earlier shuffle output instead of recomputing it.
+
+Caching: the matched-events table is cached once and reused by the on-time,
+headway and variability aggregations. Persistence between stages is the
+Parquet write itself.
+
+## Complexity
+
+| Operation | Cost | Note |
+|---|---|---|
+| Snapshot parsing | O(P) over P pings | linear scan, constant memory per file |
+| Matching join | ~O(P log S) | broadcast avoids the naive P x S comparison |
+| Aggregations | O(M) over M matched events | one shuffle by key each |
+| Logistic regression | O(n d i) | n rows, d features, i iterations |
+| Random forest / GBT | O(t n d log n) | t trees; GBT is sequential in t, hence slowest |
+
+Training cost against quality is reported as F1 per training second in the
+model comparison (docs/results/metrics.csv).
+
+## Memory
+
+A week of national GTFS-RT does not fit in pandas on an 8 GB laptop. The
+pipeline deals with that twice over: snapshots are parsed one file at a time
+and only the bbox-filtered rows kept, and everything downstream of Parquet is
+Spark, which spills to disk when a partition exceeds memory. The one deliberate
+exception is the LSOA spatial join, where the data is small enough that
+GeoPandas is the simpler and faster choice.
