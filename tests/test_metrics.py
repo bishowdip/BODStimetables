@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 
-from src.ingest.download_archive import RateLimiter
 from src.ml.evaluate import _curve_points
 
 
@@ -22,13 +21,3 @@ def test_curve_points_endpoints():
     assert roc.iloc[0].tolist() == [0.0, 0.0]   # curve starts at origin
     assert np.isclose(roc.iloc[-1].fpr, 1.0)
     assert np.isclose(roc.iloc[-1].tpr, 1.0)
-
-
-def test_rate_limiter_spaces_calls():
-    import time
-
-    rl = RateLimiter(per_second=20)  # 50 ms gap
-    rl.wait()
-    t0 = time.monotonic()
-    rl.wait()
-    assert time.monotonic() - t0 >= 0.04

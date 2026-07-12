@@ -39,10 +39,10 @@ def architecture() -> None:
     ax.set_title("System architecture: ingestion -> processing -> storage/ML -> visualisation",
                  fontsize=12, fontweight="bold", pad=10)
 
-    _box(ax, 1, 10.6, 8, 2.0, "INGESTION  (Python, rate-limited)",
-         ["download_archive  -> GTFS-RT + daily timetables",
-          "parse_gtfsrt  -> filter to WY bbox, Parquet",
-          "load_static / fetch_weather  -> GTFS, IMD, LSOA, weather"],
+    _box(ax, 1, 10.6, 8, 2.0, "INGESTION  (Python collectors)",
+         ["poll_live / fetch_disruptions  -> GTFS-RT + SIRI-SX over the window",
+          "download_timetable / download_supplementary  -> GTFS, IMD, LSOA",
+          "parse_gtfsrt / load_static / fetch_weather  -> WY-filtered Parquet"],
          fc="#fdf3e7", ec="#c8801f")
     _box(ax, 1, 7.6, 8, 2.3, "PROCESSING  (PySpark core)",
          ["trip_match  -> positions <-> stop_times (broadcast join)",

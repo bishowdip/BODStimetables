@@ -51,21 +51,14 @@ paths:
   db: data/reliability.sqlite
 
 sources:
-  ndl_archive_base: https://data.bus-data.dft.gov.uk/  # placeholder; set the real archive base
   open_meteo_archive: https://archive-api.open-meteo.com/v1/archive
-  rate_limit_per_sec: 1
-  # --- Live BODS feeds (self-archive path; the 2024 NDL archive is expired). ---
-  # The API key is read from the env var named here, never stored in the repo:
-  #   export BODS_API_KEY=...   (free account at data.bus-data.dft.gov.uk)
+  # Live BODS feeds. The API key is read from the env var named here (set it in
+  # the git-ignored .env); positions and disruptions are live-only, so they are
+  # captured across the study window rather than downloaded after the fact.
   bods:
     api_key_env: BODS_API_KEY
     gtfsrt_url: https://data.bus-data.dft.gov.uk/api/v1/gtfsrtdatafeed/
-    # Current regional GTFS timetable download (Yorkshire). May need the key too.
     timetable_url: https://data.bus-data.dft.gov.uk/timetable/download/gtfs-file/yorkshire
-
-  # --- Optional: date-templated archive (only if you have a working archive). ---
-  # timetable_url_template: "https://.../timetables/{date}/wy.zip"
-  # gtfsrt_url_template:    "https://.../gtfsrt/{date}/snapshots.dat"
 
   # --- Supplementary datasets (download_supplementary.py fetches these). ---
   imd_url: https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/845345/File_7_-_All_IoD2019_Scores__Ranks__Deciles_and_Population_Denominators_3.csv
