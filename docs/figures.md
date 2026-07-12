@@ -16,3 +16,12 @@ rest are regenerated into docs/figures/ by the run order in the README.
 | 9 | figures/feature_importance.png | Random-forest feature importance; route history and trips-per-band dominate. |
 | 10 | figures/threshold_sweep.png | Precision, recall and F1 for the compliant class across decision thresholds; F1 peaks at 0.30. |
 | 11 | figures/reliability_map.html | Interactive map of 12,393 stops coloured by measured on-time rate (open in a browser; screenshot for the appendix). |
+| 12 | figures/info_data_funnel.png | Pipeline volumes from 11.4M raw pings down to the 9,533 model rows (log scale). |
+| 13 | figures/info_metric_tiles.png | The brief's six metrics measured on the study week, shown as headline tiles. |
+| 14 | figures/info_frequency_confound.png | Compliance falls from 46% to 7% as trips per band rise while mean punctuality stays flat: the threshold rewards infrequency. |
+| 15 | figures/info_equity_panels.png | The two deprivation gradients side by side: compliance favours affluent areas, raw punctuality favours deprived ones. |
+| 16 | figures/info_avl_by_day.png | AVL-confirmed operation per study day against the weekly floor of 79.1%. |
+| 17 | figures/info_sensitivity.png | Compliant share under the ±2, ±3 and ±5 minute windows. |
+
+`tools/make_infographics.py` rebuilds figures 12–17 from the measured results,
+so every number shown is reproducible.
