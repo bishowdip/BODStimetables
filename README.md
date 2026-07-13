@@ -65,6 +65,7 @@ python -m src.ml.interpret
 
 # figures and map
 python -m src.viz.eda_static
+python -m src.viz.eda_charts
 python -m src.viz.plots && python -m src.viz.map
 ```
 

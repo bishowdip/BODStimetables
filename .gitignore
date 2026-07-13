@@ -54,3 +54,6 @@ notes/
 poll.log
 disruptions.log
 night1.log
+
+# Generated report document
+*.docx
