@@ -21,6 +21,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from pyspark.ml import PipelineModel
 from pyspark.ml.functions import vector_to_array
@@ -33,6 +34,7 @@ log = logging.getLogger("interpret")
 RESULTS = project_path("docs", "results")
 FIGS = project_path("docs", "figures")
 LABEL = "compliant"
+INK = "#2b2b33"
 
 
 def feature_names(transformed_df, col: str = "features") -> list[str]:
@@ -101,6 +103,49 @@ def plot_importances(imp: pd.DataFrame) -> None:
     plt.close()
 
 
+def confusion_and_calibration(spark, pred_dir, model: str = "random_forest") -> None:
+    """Confusion matrix and a reliability (calibration) curve for the best model."""
+    preds = spark.read.parquet(str(pred_dir / model))
+    pdf = (
+        preds.withColumn("score", vector_to_array("probability")[1])
+        .select(F.col(LABEL).alias("label"), "prediction", "score")
+        .toPandas()
+    )
+
+    # confusion matrix (counts, at the default 0.5 cut the model was scored on)
+    cm = pd.crosstab(pdf.label, pdf.prediction).reindex(index=[0, 1], columns=[0, 1]).fillna(0)
+    fig, ax = plt.subplots(figsize=(5.2, 4.6))
+    ax.imshow(cm.values, cmap="Blues")
+    ax.set_xticks([0, 1], ["pred non-compliant", "pred compliant"])
+    ax.set_yticks([0, 1], ["true non-compliant", "true compliant"])
+    for i in range(2):
+        for j in range(2):
+            v = int(cm.values[i, j])
+            ax.text(j, i, f"{v:,}", ha="center", va="center", fontsize=13,
+                    color="white" if v > cm.values.max() / 2 else INK)
+    ax.set_title("Confusion matrix (random forest, held-out days)", loc="left", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(FIGS / "confusion_matrix.png", dpi=150)
+    plt.close(fig)
+
+    # calibration: predicted probability vs observed frequency, in deciles
+    pdf["bin"] = pd.cut(pdf.score, np.linspace(0, 1, 11), include_lowest=True)
+    cal = pdf.groupby("bin", observed=True).agg(
+        predicted=("score", "mean"), observed=("label", "mean"), n=("label", "size")
+    ).dropna()
+    fig, ax = plt.subplots(figsize=(6, 5))
+    ax.plot([0, 1], [0, 1], "--", color="#9498a0", linewidth=1)
+    ax.plot(cal.predicted, cal.observed, marker="o", color="#4269d0", linewidth=2)
+    ax.set_xlabel("mean predicted probability")
+    ax.set_ylabel("observed compliance rate")
+    ax.set_title("Calibration of the random forest", loc="left", fontsize=11)
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(FIGS / "calibration_curve.png", dpi=150)
+    plt.close(fig)
+    log.info("wrote confusion_matrix.png and calibration_curve.png")
+
+
 def plot_threshold(sweep: pd.DataFrame) -> None:
     ax = sweep.plot(x="threshold", y=["precision", "recall", "f1"], figsize=(8, 5))
     ax.set_title("Decision-threshold trade-off (Random Forest, held-out days)")
@@ -123,6 +168,7 @@ def main() -> None:
         imp = tree_importances(spark, feats, pq / "models")
         coef = lr_coefficients(spark, feats, pq / "models")
         sweep = threshold_sweep(spark, pq / "predictions")
+        confusion_and_calibration(spark, pq / "predictions")
     finally:
         spark.stop()
 
