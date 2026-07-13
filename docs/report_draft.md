@@ -89,8 +89,13 @@ an hour, which inspection showed to be GPS artefacts.
 
 Combined, the datasets total over seven million records, roughly seventy
 times the 100,000-record requirement, met entirely with real multi-catalogue,
-multi-day and supplementary ingestion. No synthetic data was used. Figure
-`info_data_funnel.png` traces the volumes through the pipeline. *(~300 words)*
+multi-day and supplementary ingestion (augmentation strategies 1 and 4). The
+brief's three-month extended window is an augmentation option for datasets
+below the threshold, which this one exceeds seventy-fold; it is also
+impractical for this source, since the position feed is live-only and three
+months of it can only exist after three months of capture. No synthetic data
+was used. Figure `info_data_funnel.png` traces the volumes through the
+pipeline. *(~320 words)*
 
 ## 5. Methodology
 
