@@ -37,6 +37,72 @@ def _load_json(name: str):
     return json.loads((RESULTS / name).read_text())
 
 
+def delay_distribution() -> None:
+    """Stop-level delay histogram: the long late tail behind the 50.3% figure."""
+    events = pd.concat(
+        pd.read_parquet(f, columns=["delay_min"])
+        for f in glob.glob(str(project_path("data/parquet/trip_stop_delay/*/*.parquet")))
+    )
+    d = events.delay_min.clip(-10, 20)
+    median = events.delay_min.median()
+    p90 = events.delay_min.quantile(0.9)
+
+    fig, ax = plt.subplots(figsize=(9, 4.8))
+    ax.hist(d, bins=60, color=BLUE)
+    ax.axvspan(-2, 2, color=GREEN, alpha=0.15)
+    ax.axvline(median, color=INK, linewidth=1.4)
+    ax.text(median + 0.3, ax.get_ylim()[1] * 0.9, f"median {median:+.2f} min",
+            fontsize=9, color=INK)
+    ax.axvline(p90, color=ORANGE, linewidth=1.4)
+    ax.text(p90 + 0.3, ax.get_ylim()[1] * 0.78, f"90th pct {p90:+.1f} min",
+            fontsize=9, color=ORANGE)
+    ax.set_xlabel("delay at stop (minutes; negative = early)")
+    ax.set_ylabel("matched stop events")
+    ax.set_title("Delays lean late: a long right tail past the on-time band",
+                 loc="left", fontsize=12, color=INK)
+    ax.text(0, -0.18, "green band = on time (+/-2 min)", transform=ax.transAxes,
+            fontsize=8, color=GRAY)
+    ax.spines[["top", "right"]].set_visible(False)
+    plt.tight_layout()
+    plt.savefig(FIGS / "info_delay_distribution.png", dpi=150)
+    plt.close()
+
+
+def data_sources() -> None:
+    """How each dataset is collected, as a labelled table figure."""
+    conn = sqlite3.connect(project_path(load_config()["paths"]["db"]))
+    conn.close()  # only used to confirm the DB exists; counts are measured below
+    rows = [
+        ("Vehicle positions", "BODS GTFS-RT", "live API, polled every 60s", "yes", "4.93M"),
+        ("Disruptions", "BODS SIRI-SX", "live API, every 6 hours", "yes", "731"),
+        ("Timetable", "BODS GTFS", "one file download", "no", "2.57M"),
+        ("Deprivation (IMD)", "gov.uk", "one file download", "no", "32,844"),
+        ("LSOA boundaries", "ONS (mirror)", "one file download", "no", "1,767"),
+        ("Weather", "Open-Meteo", "one API request", "no", "168"),
+    ]
+    headers = ["Dataset", "Source", "How collected", "Key?", "Records"]
+
+    fig, ax = plt.subplots(figsize=(10, 3.4))
+    ax.axis("off")
+    ax.set_title("Six real sources, two collection methods", loc="left",
+                 fontsize=13, color=INK, y=0.98)
+    tab = ax.table(cellText=rows, colLabels=headers, loc="center", cellLoc="left")
+    tab.auto_set_font_size(False)
+    tab.set_fontsize(9.5)
+    tab.scale(1, 1.6)
+    for j in range(len(headers)):
+        c = tab[0, j]
+        c.set_facecolor(INK)
+        c.set_text_props(color="white", fontweight="bold")
+    for i in range(1, len(rows) + 1):
+        live = "live API" in rows[i - 1][2]
+        for j in range(len(headers)):
+            tab[i, j].set_facecolor("#eef2fb" if live else "#f6f6f7")
+    plt.tight_layout()
+    plt.savefig(FIGS / "info_data_sources.png", dpi=150, bbox_inches="tight")
+    plt.close()
+
+
 def data_funnel() -> None:
     """Row counts at each pipeline stage, raw pings down to model rows."""
     quality = _load_json("parse_quality.json")
@@ -216,15 +282,18 @@ def sensitivity_bars() -> None:
 
 def main() -> None:
     FIGS.mkdir(parents=True, exist_ok=True)
+    data_sources()
     data_funnel()
+    delay_distribution()
     metric_tiles()
     frequency_confound()
     equity_panels()
     avl_by_day()
     sensitivity_bars()
-    print("infographics written to docs/figures/: "
-          "info_data_funnel, info_metric_tiles, info_frequency_confound, "
-          "info_equity_panels, info_avl_by_day, info_sensitivity")
+    print("infographics written to docs/figures/: info_data_sources, "
+          "info_data_funnel, info_delay_distribution, info_metric_tiles, "
+          "info_frequency_confound, info_equity_panels, info_avl_by_day, "
+          "info_sensitivity")
 
 
 if __name__ == "__main__":

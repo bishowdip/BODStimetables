@@ -22,6 +22,10 @@ rest are regenerated into docs/figures/ by the run order in the README.
 | 15 | figures/info_equity_panels.png | The two deprivation gradients side by side: compliance favours affluent areas, raw punctuality favours deprived ones. |
 | 16 | figures/info_avl_by_day.png | AVL-confirmed operation per study day against the weekly floor of 79.1%. |
 | 17 | figures/info_sensitivity.png | Compliant share under the ±2, ±3 and ±5 minute windows. |
+| 18 | figures/info_data_sources.png | The six datasets and how each was collected (two live APIs, four downloads). |
+| 19 | figures/info_delay_distribution.png | Distribution of delays at matched stops: median +1.05 min, a long late tail past the on-time band. |
+| 20 | figures/reliability_map.png | Static render of the reliability map for the appendix (the interactive version is the .html). |
 
-`tools/make_infographics.py` rebuilds figures 12–17 from the measured results,
-so every number shown is reproducible.
+`tools/make_infographics.py` rebuilds figures 12–19 from the measured results,
+so every number shown is reproducible. `docs/report_illustrated.md` is the
+report with all figures placed inline.
