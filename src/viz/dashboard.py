@@ -27,8 +27,14 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
-import pydeck as pdk
 import streamlit as st
+
+try:  # pydeck drives the interactive map; fall back to st.map without it
+    import pydeck as pdk
+
+    HAS_PYDECK = True
+except ModuleNotFoundError:  # pragma: no cover - depends on the environment
+    HAS_PYDECK = False
 
 from src.common import load_config, project_path
 
@@ -486,23 +492,29 @@ with tabs[6]:
         k[3].metric("Matched passes", f"{int(df.n_events.sum()):,}")
 
         bbox = CFG["region"]["bbox"]
-        st.pydeck_chart(pdk.Deck(
-            map_style="light",
-            initial_view_state=pdk.ViewState(
-                latitude=(bbox["min_lat"] + bbox["max_lat"]) / 2,
-                longitude=(bbox["min_lon"] + bbox["max_lon"]) / 2,
-                zoom=9.2, pitch=0,
-            ),
-            layers=[pdk.Layer(
-                "ScatterplotLayer", data=df,
-                get_position=["lon", "lat"], get_fill_color="color",
-                get_radius=90, radius_min_pixels=2, radius_max_pixels=8,
-                pickable=True, opacity=0.75,
-            )],
-            tooltip={"text": "{name}\non time: {pct}%\npasses: {n_events}\nIMD decile: {imd_decile}"},
-        ))
-        st.caption("Green at or above the chosen threshold, amber within 25 points below it, red under that. "
-                   "Drag to pan, scroll to zoom, hover a stop for detail.")
+        if HAS_PYDECK:
+            st.pydeck_chart(pdk.Deck(
+                map_style="light",
+                initial_view_state=pdk.ViewState(
+                    latitude=(bbox["min_lat"] + bbox["max_lat"]) / 2,
+                    longitude=(bbox["min_lon"] + bbox["max_lon"]) / 2,
+                    zoom=9.2, pitch=0,
+                ),
+                layers=[pdk.Layer(
+                    "ScatterplotLayer", data=df,
+                    get_position=["lon", "lat"], get_fill_color="color",
+                    get_radius=90, radius_min_pixels=2, radius_max_pixels=8,
+                    pickable=True, opacity=0.75,
+                )],
+                tooltip={"text": "{name}\non time: {pct}%\npasses: {n_events}\nIMD decile: {imd_decile}"},
+            ))
+            st.caption("Green at or above the chosen threshold, amber within 25 points below it, red under "
+                       "that. Drag to pan, scroll to zoom, hover a stop for detail.")
+        else:
+            hexed = df.assign(hex="#" + df.color.map(lambda c: "%02x%02x%02x" % tuple(c)))
+            st.map(hexed, latitude="lat", longitude="lon", color="hex", size=40)
+            st.caption("Green at or above the chosen threshold, amber within 25 points below it, red under "
+                       "that. Install pydeck (`pip install -r requirements.txt`) for hover detail.")
 
         with st.expander("Worst stops in view"):
             st.dataframe(
