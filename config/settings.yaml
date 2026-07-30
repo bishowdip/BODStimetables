@@ -57,6 +57,7 @@ sources:
   bods:
     api_key_env: BODS_API_KEY
     gtfsrt_url: https://data.bus-data.dft.gov.uk/api/v1/gtfsrtdatafeed/
+    siri_sx_url: https://data.bus-data.dft.gov.uk/api/v1/siri-sx/
     timetable_url: https://data.bus-data.dft.gov.uk/timetable/download/gtfs-file/yorkshire
 
   # --- Supplementary datasets (download_supplementary.py fetches these). ---

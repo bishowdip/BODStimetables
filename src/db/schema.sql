@@ -3,6 +3,8 @@
 
 PRAGMA foreign_keys = ON;
 
+DROP TABLE IF EXISTS disruption_stop;
+DROP TABLE IF EXISTS fact_disruption;
 DROP TABLE IF EXISTS fact_route_band_day;
 DROP TABLE IF EXISTS fact_trip_delay;
 DROP TABLE IF EXISTS dim_stop;

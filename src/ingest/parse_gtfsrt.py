@@ -21,7 +21,6 @@ import logging
 from pathlib import Path
 
 import pandas as pd
-from google.transit import gtfs_realtime_pb2
 
 from src.common import load_config, project_path
 
@@ -32,6 +31,14 @@ COLUMNS = ["vehicle_id", "trip_id", "route_id", "lat", "lon", "bearing", "ts"]
 
 def _parse_snapshot(path: Path, bbox: dict) -> tuple[list[tuple], int]:
     """One FeedMessage -> (rows, n_dropped_out_of_bbox)."""
+    try:
+        from google.transit import gtfs_realtime_pb2
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "GTFS-RT parsing needs the 'gtfs-realtime-bindings' package. "
+            "Install project dependencies with 'pip install -r requirements.txt'."
+        ) from exc
+
     feed = gtfs_realtime_pb2.FeedMessage()
     feed.ParseFromString(path.read_bytes())
     rows: list[tuple] = []

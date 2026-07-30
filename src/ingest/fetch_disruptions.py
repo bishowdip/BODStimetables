@@ -30,6 +30,22 @@ from src.common import load_config, project_path
 log = logging.getLogger("fetch_disruptions")
 NS = {"s": "http://www.siri.org.uk/siri"}
 WY_ATCO_PREFIX = "450"
+SITUATION_COLUMNS = [
+    "situation_id",
+    "participant",
+    "progress",
+    "reason",
+    "planned",
+    "summary",
+    "validity_start",
+    "validity_end",
+    "n_affected_stops",
+    "wy_stop_refs",
+    "line_refs",
+    "operator_refs",
+    "wy_specific",
+    "fetched_at",
+]
 
 
 def _text(el, path: str) -> str | None:
@@ -65,17 +81,15 @@ def parse_situations(xml_bytes: bytes, fetched_at: str) -> pd.DataFrame:
                 "fetched_at": fetched_at,
             }
         )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=SITUATION_COLUMNS)
 
 
 def fetch_once(cfg, session) -> int:
     key = os.environ.get(cfg["sources"]["bods"]["api_key_env"])
     if not key:
         raise SystemExit("set BODS_API_KEY before fetching disruptions")
-    r = session.get(
-        "https://data.bus-data.dft.gov.uk/api/v1/siri-sx/",
-        params={"api_key": key}, timeout=60,
-    )
+    url = cfg["sources"]["bods"]["siri_sx_url"]
+    r = session.get(url, params={"api_key": key}, timeout=60)
     r.raise_for_status()
 
     now = datetime.now()

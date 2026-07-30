@@ -62,3 +62,13 @@ def test_blanket_situation_kept_but_not_wy_specific():
     row = df[df.situation_id == "abc-3"].iloc[0]
     assert not row.wy_specific  # names no stops: kept, flagged
     assert row.n_affected_stops == 0
+
+
+def test_empty_feed_keeps_expected_schema():
+    xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+    <Siri xmlns="http://www.siri.org.uk/siri" version="2.0">
+      <ServiceDelivery><SituationExchangeDelivery><Situations /></SituationExchangeDelivery></ServiceDelivery>
+    </Siri>"""
+    df = parse_situations(xml, "2026-07-02T12:00:00")
+    assert df.empty
+    assert {"situation_id", "wy_specific", "wy_stop_refs", "fetched_at"}.issubset(df.columns)

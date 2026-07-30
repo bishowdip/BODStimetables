@@ -1,7 +1,8 @@
 """Evaluate the three models on the held-out future block and compare them.
 
 Reports the full set the brief asks for: Accuracy, Precision, Recall, F1 and
-ROC-AUC, plus PR-AUC and a confusion matrix. Because most route-band-days are
+ROC-AUC, plus PR-AUC, balanced accuracy, specificity, NPV, false-positive rate,
+false-negative rate and a confusion matrix. Because most route-band-days are
 non-compliant (buses run late), accuracy is misleading, so we lead with F1 / PR-
 AUC and print a majority-class baseline for context. The Model Efficiency metric
 (F1 per training-second) combines these with the times saved during training.
@@ -26,6 +27,49 @@ from src.common import get_spark, load_config, project_path
 log = logging.getLogger("evaluate")
 LABEL = "compliant"
 MODELS = ["logistic_regression", "random_forest", "gbt"]
+
+
+def confusion_metrics(cm: pd.DataFrame) -> dict:
+    """Calculate binary metrics from TP, TN, FP and FN.
+
+    Positive class: compliant route-band-day.
+
+    accuracy = (TP + TN) / (TP + TN + FP + FN)
+    precision = TP / (TP + FP)
+    recall = TP / (TP + FN)
+    specificity = TN / (TN + FP)
+    f1 = 2 * precision * recall / (precision + recall)
+    balanced_accuracy = (recall + specificity) / 2
+    fpr = FP / (FP + TN)
+    fnr = FN / (FN + TP)
+    npv = TN / (TN + FN)
+    """
+    counts = {
+        (int(r[LABEL]), int(r["prediction"])): int(r["count"])
+        for _, r in cm.iterrows()
+    }
+    tn = counts.get((0, 0), 0)
+    fp = counts.get((0, 1), 0)
+    fn = counts.get((1, 0), 0)
+    tp = counts.get((1, 1), 0)
+
+    precision = tp / (tp + fp) if (tp + fp) else 0.0
+    recall = tp / (tp + fn) if (tp + fn) else 0.0
+    specificity = tn / (tn + fp) if (tn + fp) else 0.0
+    npv = tn / (tn + fn) if (tn + fn) else 0.0
+    return {
+        "tp": tp,
+        "tn": tn,
+        "fp": fp,
+        "fn": fn,
+        "specificity": specificity,
+        "balanced_accuracy": (recall + specificity) / 2,
+        "npv": npv,
+        "false_positive_rate": fp / (fp + tn) if (fp + tn) else 0.0,
+        "false_negative_rate": fn / (fn + tp) if (fn + tp) else 0.0,
+        "positive_precision": precision,
+        "positive_recall": recall,
+    }
 
 
 def _curve_points(pdf: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -74,6 +118,7 @@ def evaluate_model(spark, name: str, pred_dir, results_dir) -> dict:
 
     cm = preds.groupBy(LABEL, "prediction").count().toPandas()
     cm.to_csv(results_dir / f"confusion_{name}.csv", index=False)
+    metrics.update(confusion_metrics(cm))
 
     pdf = preds.select(F.col(LABEL).alias("label"), "score").toPandas()
     roc_pts, pr_pts = _curve_points(pdf)

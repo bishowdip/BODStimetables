@@ -21,7 +21,12 @@ from src.common import load_config, project_path
 
 log = logging.getLogger("load_static")
 
-GTFS_TABLES = ("stops", "routes", "trips", "stop_times", "calendar")
+def _configured_path(value: str | None) -> Path | None:
+    """Resolve config paths relative to the project root unless absolute."""
+    if not value:
+        return None
+    path = Path(value)
+    return path if path.is_absolute() else project_path(value)
 
 
 def _unzip_timetables(dates, raw_root: Path) -> list[Path]:
@@ -87,8 +92,8 @@ def load_gtfs(spark, gtfs_dirs, bbox, out_root: Path) -> None:
 def load_imd(cfg, out_root: Path) -> None:
     import pandas as pd
 
-    path = cfg["sources"].get("imd_csv")
-    if not path or not Path(path).exists():
+    path = _configured_path(cfg["sources"].get("imd_csv"))
+    if not path or not path.exists():
         log.warning("IMD csv not configured/found (sources.imd_csv) -- skipping")
         return
     imd = pd.read_csv(path)
@@ -104,8 +109,8 @@ def load_lsoa(cfg, out_root: Path) -> None:
     except ImportError:
         log.warning("geopandas not installed -- skipping LSOA boundaries")
         return
-    path = cfg["sources"].get("lsoa_geojson")
-    if not path or not Path(path).exists():
+    path = _configured_path(cfg["sources"].get("lsoa_geojson"))
+    if not path or not path.exists():
         log.warning("LSOA boundaries not configured/found (sources.lsoa_geojson) -- skipping")
         return
     gdf = gpd.read_file(path)
